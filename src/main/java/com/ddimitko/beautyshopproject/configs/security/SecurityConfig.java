@@ -58,11 +58,11 @@ public class SecurityConfig{
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/shops/create").hasAuthority("ROLE_ADMIN")
-                        .requestMatchers("/api/management/**", "/api/shops/*/upload", "/api/payments/**").hasAuthority("ROLE_OWNER")
+                        .requestMatchers("/api/management/**", "/api/shops/*/upload", "/api/payments/account").hasAuthority("ROLE_OWNER")
                         .requestMatchers("/api/appointment/employee/all").hasAnyAuthority("ROLE_OWNER", "ROLE_EMPLOYEE")
                         .requestMatchers("/api/me", "/api/profile/**","/api/appointment/all", "/api/appointment/cancel").authenticated()
                         .requestMatchers("/", "/auth/**", "/api/appointment/reserve", "/api/appointment/confirm",
-                                "/api/appointment/availability", "/api/appointment/reservation/*", "/api/shops", "/api/shops/*", "/api/calendar/days").permitAll()
+                                "/api/appointment/availability", "/api/appointment/reservation/*", "/api/shops", "/api/shops/*", "/api/calendar/days", "/api/payments/account_get", "/api/payments/create-checkout-session", "/uploads/**").permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider())

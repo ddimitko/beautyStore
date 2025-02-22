@@ -43,6 +43,10 @@ public class ServicesService {
         return mapToDto(service);
     }
 
+    public com.ddimitko.beautyshopproject.entities.Service getServiceById(int serviceId) {
+        return  serviceRepository.findById(serviceId).orElseThrow(() -> new RuntimeException("Service not found"));
+    }
+
     public List<ServiceResponseDto> getAllServicesForEmployee(long employeeId) {
         List<com.ddimitko.beautyshopproject.entities.Service> services = serviceRepository.findByEmployeeId(employeeId);
         List<ServiceResponseDto> serviceResponseDtos = new ArrayList<>();

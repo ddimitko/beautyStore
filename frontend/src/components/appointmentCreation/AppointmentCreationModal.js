@@ -32,6 +32,8 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
 
     console.log("AppointmentCreationModal isOpen:", isOpen);
 
+    const [appointmentData, setAppointmentData] = useState(null);
+
 
     // Step 2: Account Details
     const [accountDetails, setAccountDetails] = useState({
@@ -232,6 +234,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
             }
 
             // Store the session token in sessionStorage
+            sessionStorage.clear();
             sessionStorage.setItem("sessionToken", sessionToken);
 
             // Proceed to the next stage (this can be your stepper callback)
@@ -272,7 +275,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
             return;
         }
 
-        const appointmentData = {
+        const newAppointment = {
             employeeId: employee.userId,
             serviceId: service.id,
             timeSlotDto: {
@@ -282,19 +285,25 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
             },
         };
 
-        console.log(appointmentData);
-
         if (isAuthenticated) {
-            appointmentData.customerId = user.id;
-        } else {
-            appointmentData.fullName = accountDetails.name;
-            appointmentData.email = accountDetails.email;
-            appointmentData.phone = accountDetails.phone;
+            newAppointment.customerId = user.id;
         }
+            newAppointment.fullName = accountDetails.name;
+            newAppointment.email = accountDetails.email;
+            newAppointment.phone = accountDetails.phone;
 
-        // Call the reservation function. On success, it will call onNext.
-        reserveAppointment(appointmentData);
+        console.log(newAppointment);
+
+
+        setAppointmentData(newAppointment);
     };
+
+    useEffect(() => {
+        if (appointmentData) {
+            console.log("Calling reserveAppointment:", appointmentData);
+            reserveAppointment(appointmentData); // Ensures it runs AFTER state updates
+        }
+    }, [appointmentData]); // Runs when `appointmentData` updates
 
     return (
         <Dialog open={isOpen} onClose={handleModalClose} className="relative z-50">
@@ -391,6 +400,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                         })
                                     }
                                     disabled={isAuthenticated}
+                                    required
                                 />
                                 <TextField
                                     fullWidth
@@ -407,6 +417,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                     <TextField
                                         fullWidth
                                         label="Email"
+                                        type="email"
                                         value={accountDetails.email}
                                         onChange={(e) =>
                                             setAccountDetails({
@@ -414,6 +425,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                                 email: e.target.value,
                                             })
                                         }
+                                        required
                                         disabled={isAuthenticated}
                                     />
                             </div>
@@ -442,7 +454,9 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                         <StepperPanel header="Payment Method">
                             <div className="flex flex-column h-12rem">
                                 <div className="border-2 border-dashed surface-border border-round surface-ground flex-auto flex justify-content-center align-items-center font-medium">
-                                    <SelectPaymentMethod
+                                    <SelectPaymentMethod shopId={shop.id}
+                                                         sessionToken={sessionStorage.getItem("sessionToken")}
+                                                         appointmentData={appointmentData}
                                         onNext={(method) => {
                                             setPaymentMethod(method);
                                             stepperRef.current.nextCallback();
