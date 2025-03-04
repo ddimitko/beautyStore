@@ -2,12 +2,14 @@ package com.ddimitko.beautyshopproject.services;
 
 import com.ddimitko.beautyshopproject.Dto.requests.AppointmentRequestDto;
 import com.ddimitko.beautyshopproject.Dto.calendar.TimeSlotDto;
+import com.ddimitko.beautyshopproject.configs.sockets.AppointmentWebSocketConfig;
 import com.ddimitko.beautyshopproject.entities.*;
 import com.ddimitko.beautyshopproject.entities.calendar.DailySchedule;
 import com.ddimitko.beautyshopproject.nomenclatures.AppointmentStatus;
 import com.ddimitko.beautyshopproject.repositories.*;
 import com.ddimitko.beautyshopproject.repositories.UserRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.threeten.extra.Interval;
 import org.springframework.stereotype.Service;
@@ -23,21 +25,25 @@ import java.util.stream.Stream;
 public class AppointmentService {
 
     private final RedisTemplate<String, Object> redisTemplate;
-    private final String SLOT_KEY_PREFIX = "reserved-slot:";
+
+    private final ApplicationEventPublisher eventPublisher;
 
     private final AppointmentRepository appointmentRepository;
     private final EmployeeRepository employeeRepository;
     private final UserRepository userRepository;
     private final ServiceRepository serviceRepository;
     private final CalendarService calendarService;
+    private final AppointmentWebSocketConfig appointmentWebSocketConfig;
 
-    public AppointmentService(RedisTemplate<String, Object> redisTemplate, AppointmentRepository appointmentRepository, EmployeeRepository employeeRepository, UserRepository userRepository, ServiceRepository serviceRepository, CalendarService calendarService) {
+    public AppointmentService(RedisTemplate<String, Object> redisTemplate, ApplicationEventPublisher eventPublisher, AppointmentRepository appointmentRepository, EmployeeRepository employeeRepository, UserRepository userRepository, ServiceRepository serviceRepository, CalendarService calendarService, AppointmentWebSocketConfig appointmentWebSocketConfig) {
         this.redisTemplate = redisTemplate;
+        this.eventPublisher = eventPublisher;
         this.appointmentRepository = appointmentRepository;
         this.employeeRepository = employeeRepository;
         this.userRepository = userRepository;
         this.serviceRepository = serviceRepository;
         this.calendarService = calendarService;
+        this.appointmentWebSocketConfig = appointmentWebSocketConfig;
     }
 
     public List<Appointment> getAllAppointmentsForCustomer(long userId) {
@@ -76,12 +82,12 @@ public class AppointmentService {
             throw new RuntimeException("An employee cannot book an appointment with themselves.");
         }
 
-        // Generate unique session identifier
+        //Generate unique session identifier
         String sessionToken = UUID.randomUUID().toString();
 
         String redisKey = "reservation:" + sessionToken;
 
-        // Store session details in Redis (expires in 3 minutes)
+        //Store session details in Redis (expires in 10 minutes)
         Map<String, Object> sessionData = new HashMap<>();
         if(dto.getCustomerId() != null) {
             sessionData.put("customerId", dto.getCustomerId());
@@ -96,7 +102,9 @@ public class AppointmentService {
         sessionData.put("endTime", dto.getTimeSlotDto().getEndTime().toString());
 
         redisTemplate.opsForHash().putAll(redisKey, sessionData);
-        redisTemplate.expire(redisKey, 3, TimeUnit.MINUTES);
+        redisTemplate.expire(redisKey, 10, TimeUnit.MINUTES);
+
+        updateTimeSlots(dto.getEmployeeId(), dto.getServiceId(), dto.getTimeSlotDto().getDate());
 
         return sessionToken; // Return token to frontend
     }
@@ -146,10 +154,6 @@ public class AppointmentService {
 
         validateAppointmentRequest(dto);
 
-        //List<TimeSlotDto> availableSlots = getAvailableTimeSlots(dto.getTimeSlotDto().getDate(), employee.getId(), service.getId());
-        //System.out.println("Available Slots: " + availableSlots); // Debugging
-        //validateSlot(availableSlots, dto.getTimeSlotDto().getStartTime(), dto.getTimeSlotDto().getEndTime(), dto.getTimeSlotDto().getDate());
-
         Appointment appointment = new Appointment();
 
         if (dto.getCustomerId() != null) {
@@ -182,14 +186,13 @@ public class AppointmentService {
     @Transactional
     public void cancelReservation(String sessionToken) {
         String redisKey = "reservation:" + sessionToken;
-        if (Boolean.FALSE.equals(redisTemplate.hasKey(redisKey))) {
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(redisKey))) {
             redisTemplate.delete(redisKey);
         }
     }
 
 
     public List<Appointment> getAllAppointmentsForGivenDate(LocalDate date, String userId) {
-        //employeeRepository.findById(employeeId).orElseThrow(() -> new RuntimeException("Employee not found."));
         return appointmentRepository.findAllByAppointmentDateAndEmployee(date, Long.parseLong(userId));
     }
 
@@ -215,11 +218,19 @@ public class AppointmentService {
         ZonedDateTime zonedEnd = ZonedDateTime.of(date, schedule.getEndTime(), ZoneId.systemDefault());
 
         if (date.isEqual(LocalDate.now())) {
-            zonedStart = ZonedDateTime.of(LocalDate.now(), LocalTime.now(), ZoneId.systemDefault());
+            LocalTime now = LocalTime.now();
+            LocalTime nextAvailableStart = now.plusMinutes(durationInMinutes - (now.getMinute() % durationInMinutes)); // Round up
+
+            // Ensure we don't start after the working hours
+            if (nextAvailableStart.isBefore(schedule.getEndTime())) {
+                zonedStart = ZonedDateTime.of(date, nextAvailableStart, ZoneId.systemDefault());
+            } else {
+                return Collections.emptyList(); // No available slots remaining for today
+            }
         }
 
         return Stream.iterate(zonedStart, start -> start.plusMinutes(durationInMinutes))
-                .takeWhile(start -> start.plusMinutes(durationInMinutes).isBefore(zonedEnd))
+                .takeWhile(start -> !start.plusMinutes(durationInMinutes).isAfter(zonedEnd)) // Include last slot if valid
                 .map(start -> Interval.of(start.toInstant(), start.plusMinutes(durationInMinutes).toInstant()))
                 .collect(Collectors.toList());
     }
@@ -245,10 +256,9 @@ public class AppointmentService {
                 .toList();
 
         // Fetch reserved slots from Redis
-        Set<String> reservedSlotKeys = redisTemplate.keys(SLOT_KEY_PREFIX + userId + ":" + date + ":*");
-        Set<Interval> reservedIntervals = reservedSlotKeys != null ? reservedSlotKeys.stream()
-                .map(this::parseRedisKeyToInterval) // Parse Redis key to Interval
-                .collect(Collectors.toSet()) : Collections.emptySet();
+        Set<String> allReservationKeys = redisTemplate.keys("reservation:*");
+        Set<Interval> reservedIntervals = parseRedisKeyToInterval(allReservationKeys, userId, date);
+
 
         // Combine confirmed appointments and reserved slots into occupied intervals
         Set<Interval> occupiedIntervals = Stream.concat(
@@ -268,28 +278,40 @@ public class AppointmentService {
                         LocalTime.ofInstant(slot.getStart(), ZoneId.systemDefault()),
                         LocalTime.ofInstant(slot.getEnd(), ZoneId.systemDefault()),
                         date))
-                .collect(Collectors.toList());
+                .toList();
     }
 
-    private Interval parseRedisKeyToInterval(String redisKey) {
-        // Extract details from Redis key: "reserved-slot:employeeId:date:startHour:startMinute:endHour:endMinute"
-        String[] parts = redisKey.split(":");
+    public void updateTimeSlots(Long employeeId, int serviceId, LocalDate date) {
+        List<TimeSlotDto> updatedSlots = getAvailableTimeSlots(date, employeeId, serviceId);
+        appointmentWebSocketConfig.sendUpdatedTimeSlots(employeeId, serviceId, date, updatedSlots);
+    }
 
-        if (parts.length < 7) {
-            throw new IllegalArgumentException("Invalid Redis key format: " + redisKey);
+    private Set<Interval> parseRedisKeyToInterval (Set<String> reservationKeys, long userId, LocalDate date) {
+        if (reservationKeys == null || reservationKeys.isEmpty()) {
+            return Collections.emptySet();
         }
 
-        LocalDate date = LocalDate.parse(parts[2]); // Date part
+        Set<Interval> reservedIntervals = new HashSet<>();
 
-        // Properly reconstruct the start and end times
-        LocalTime startTime = LocalTime.of(Integer.parseInt(parts[3]), Integer.parseInt(parts[4]));
-        LocalTime endTime = LocalTime.of(Integer.parseInt(parts[5]), Integer.parseInt(parts[6]));
+        for (String key : reservationKeys) {
+            Map<Object, Object> sessionData = redisTemplate.opsForHash().entries(key);
 
-        // Convert to ZonedDateTime
-        ZonedDateTime start = ZonedDateTime.of(date, startTime, ZoneId.systemDefault());
-        ZonedDateTime end = ZonedDateTime.of(date, endTime, ZoneId.systemDefault());
+            // Ensure data exists and belongs to the correct employee & date
+            if (sessionData.isEmpty()) continue;
+            if (!String.valueOf(userId).equals(String.valueOf(sessionData.get("employeeId")))) continue;
+            if (!date.toString().equals(sessionData.get("date"))) continue;
 
-        return Interval.of(start.toInstant(), end.toInstant());
+            // Parse start & end time
+            LocalTime startTime = LocalTime.parse((String) sessionData.get("startTime"));
+            LocalTime endTime = LocalTime.parse((String) sessionData.get("endTime"));
+
+            Instant start = ZonedDateTime.of(date, startTime, ZoneId.systemDefault()).toInstant();
+            Instant end = ZonedDateTime.of(date, endTime, ZoneId.systemDefault()).toInstant();
+
+            reservedIntervals.add(Interval.of(start, end));
+        }
+
+        return reservedIntervals;
     }
 
 

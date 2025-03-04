@@ -1,4 +1,4 @@
-import {useState} from "react";
+import {useCallback, useState} from "react";
 import { FormControl, InputLabel, Select, MenuItem } from "@mui/material";
 import { Button } from "primereact/button";
 import Checkout from "../Checkout";
@@ -17,19 +17,35 @@ function SelectPaymentMethod({ sessionToken, appointmentData, onNext, onBack, sh
         }
     };
 
-    const handleCashPayment = async () => {
-        const response = await fetch("http://localhost:8080/api/payments/confirm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ sessionToken }),
-        });
-
-        const data = await response.json();
-        if (data.success) {
-            setPaymentCompleted(true);
+    const handleCashPayment = useCallback(async () => {
+        if (!sessionToken) {
+            return;
         }
-    };
+
+        console.log(sessionToken);
+
+        try {
+            const response = await fetch("http://localhost:8080/api/appointment/confirm", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${sessionToken}`  // Send session token in headers
+                }
+            });
+
+            if (!response.ok) {
+                const errorMessage = await response.text();
+                throw new Error(errorMessage || "Booking failed");
+            }
+
+            sessionStorage.removeItem("sessionToken");
+
+            onNext.current.nextCallback();
+
+        } catch (error) {
+            console.log(error);
+        }
+    }, [sessionToken, onNext]);
 
     const handleCardPayment = async () => {
         try {
@@ -46,6 +62,8 @@ function SelectPaymentMethod({ sessionToken, appointmentData, onNext, onBack, sh
                     shopId: shopId,
                 }),
             });
+
+            console.log(sessionToken, appointmentData);
 
             const data = await response.json();
 
@@ -82,12 +100,10 @@ function SelectPaymentMethod({ sessionToken, appointmentData, onNext, onBack, sh
                     <Button onClick={handleCashPayment}>Confirm Booking</Button>
                 )}
 
-                {paymentMethod === "credit_card" && sessionToken && clientSecret ? (
+                {paymentMethod === "credit_card" && sessionToken && clientSecret && (
                     <div className="flex justify-center">
-                    <Checkout connectedAccountId={connectedAccountId} clientSecret={clientSecret} />
+                    <Checkout connectedAccountId={connectedAccountId} clientSecret={clientSecret} sessionToken={sessionToken} onNext={onNext}/>
                     </div>
-                ): (
-                    <p>Loading form...</p>
                 )}
             </div>
         </div>

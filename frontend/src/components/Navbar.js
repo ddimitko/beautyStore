@@ -12,16 +12,38 @@ function Navbar() {
     const [menuOpen, setMenuOpen] = useState(false);
     const location = useLocation();
     const menuRef = useRef(null);
+    let debounceTimeout;
 
     const { setSearchTerm } = useContext(SearchContext);
     const navigate = useNavigate();
+    const [previousPage, setPreviousPage] = useState(null);
 
     // Function to determine if a link is active
     const isActive = (path) => location.pathname === path;
 
+    useEffect(() => {
+        if (location.pathname !== "/shops") {
+            setPreviousPage(location.pathname);
+        }
+    }, [location]);
+
     const handleSearchChange = (e) => {
-        setSearchTerm(e.target.value);
-        navigate("/shops"); // Redirect to search page when typing starts
+        const value = e.target.value;
+        setSearchTerm(value);
+
+        // Clear any existing timeout
+        clearTimeout(debounceTimeout);
+
+        // Set a new timeout
+        debounceTimeout = setTimeout(() => {
+            if (value.trim() === "") {
+                if (previousPage) {
+                    navigate(previousPage);
+                }
+            } else {
+                navigate("/shops");
+            }
+        }, 500); // Adjust debounce delay as needed
     };
 
     // Close the dropdown if clicking outside

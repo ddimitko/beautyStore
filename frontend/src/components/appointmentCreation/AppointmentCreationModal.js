@@ -1,6 +1,6 @@
 import { Stepper } from 'primereact/stepper'
 import { StepperPanel } from "primereact/stepperpanel";
-import React, {useContext, useState, useRef, useEffect} from "react";
+import React, {useContext, useState, useRef, useEffect, useMemo} from "react";
 import {Dialog} from "@headlessui/react";
 import { FormControl, InputLabel, Select, MenuItem, TextField } from "@mui/material";
 import { Button } from "primereact/button"
@@ -11,6 +11,9 @@ import AppointmentCreation3 from "./AppointmentCreation3";
 import { format } from "date-fns";
 import "primereact/resources/themes/lara-light-indigo/theme.css";
 import SelectPaymentMethod from "./SelectPaymentMethod";
+import {X} from "lucide-react";
+import useWebSocket from "../hooks/useWebSocket";
+import dayjs from "dayjs";
 
 function AppointmentCreationModal({ isOpen, onClose, shop }) {
     const { isAuthenticated, user } = useContext(AuthContext);
@@ -28,12 +31,24 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
     const [timeSlots, setTimeSlots] = useState([]);
     const [timeSlot, setTimeSlot] = useState(null);
 
-    const [paymentMethod, setPaymentMethod] = useState("");
-
-    console.log("AppointmentCreationModal isOpen:", isOpen);
+    // const [paymentMethod, setPaymentMethod] = useState("");
 
     const [appointmentData, setAppointmentData] = useState(null);
 
+    const shouldSubscribe = Boolean(selectedDate && employee && service);
+
+    const topic = useMemo(() => {
+        return shouldSubscribe
+            ? `/topic/timeSlots/${employee?.userId}/${service?.id}/${dayjs(selectedDate).format('YYYY-MM-DD')}`
+            : null;
+    }, [selectedDate, employee, service]);
+
+    useWebSocket(
+        "http://localhost:8080/ws",
+        topic,
+        (updatedSlots) => setTimeSlots(updatedSlots),
+        shouldSubscribe
+    );
 
     // Step 2: Account Details
     const [accountDetails, setAccountDetails] = useState({
@@ -208,6 +223,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
         setSelectedMonth(new Date());
         // Optionally, if your stepper or other fields have state, reset them as needed
         // Finally, call the parent's onClose to close the modal
+        cancelReservation();
         onClose();
     };
 
@@ -246,28 +262,21 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
     };
 
     const cancelReservation = async () => {
-        const sessionData = JSON.parse(sessionStorage.getItem("appointmentSession"));
+        const sessionData = sessionStorage.getItem("sessionToken");
         if (!sessionData) return;
 
         try {
-            await fetch(`http://localhost:8080/api/reservation/cancel/${sessionData.sessionToken}`, {
+            await fetch(`http://localhost:8080/api/appointment/reservation/cancel/${sessionData}`, {
                 method: "DELETE",
                 credentials: "include",
             });
 
-            sessionStorage.removeItem("appointmentSession"); // Remove locally
+            sessionStorage.removeItem("sessionToken"); // Remove locally
             console.log("Reservation cancelled.");
         } catch (error) {
             console.error("Error canceling reservation:", error);
         }
     };
-
-// Call this function when the user cancels the modal
-    useEffect(() => {
-        return () => {
-            cancelReservation();  // Cleanup when modal closes or user leaves
-        };
-    }, [isOpen]);
 
     const handleNext = () => {
         if (!accountDetails.name || !accountDetails.email) {
@@ -306,13 +315,23 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
     }, [appointmentData]); // Runs when `appointmentData` updates
 
     return (
-        <Dialog open={isOpen} onClose={handleModalClose} className="relative z-50">
+        <Dialog open={isOpen} onClose={(event) => {
+            if (event?.target === event?.currentTarget) return; // Ignore backdrop clicks
+            onClose();}} className="relative z-50">
             {/* The overlay to darken the background */}
             <div className="fixed inset-0 bg-black bg-opacity-25" aria-hidden="true" />
 
             {/* This wrapper centers the modal content */}
             <div className="fixed inset-0 flex items-center justify-center">
                 <Dialog.Panel className="w-full max-w-4xl transform overflow-hidden rounded-2xl bg-white p-6 text-left shadow-xl transition-all relative z-50">
+                    {/* Close Button (X) in the top-right corner */}
+                    <button
+                        onClick={handleModalClose}
+                        className="absolute top-4 right-4 p-2 rounded-full bg-gray-200 hover:bg-gray-300 transition"
+                        aria-label="Close"
+                    >
+                        <X className="w-5 h-5 text-gray-700" />
+                    </button>
                     <Dialog.Title className="text-2xl font-bold mb-4">
                         Book an Appointment
                     </Dialog.Title>
@@ -457,10 +476,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                     <SelectPaymentMethod shopId={shop.id}
                                                          sessionToken={sessionStorage.getItem("sessionToken")}
                                                          appointmentData={appointmentData}
-                                        onNext={(method) => {
-                                            setPaymentMethod(method);
-                                            stepperRef.current.nextCallback();
-                                        }}
+                                        onNext={stepperRef}
                                         onBack={() => stepperRef.current.prevCallback()}
                                     />
                                 </div>
@@ -468,7 +484,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                         </StepperPanel>
 
                         {/* Step 3: Confirmation */}
-                        <StepperPanel header="Confirm Appointment">
+                        <StepperPanel header="Confirmation">
                             <AppointmentCreation3
                                 employee={employee}
                                 service={service}
@@ -476,14 +492,6 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                 accountDetails={accountDetails}
                                 onClose={onClose}
                             />
-                            <div className="flex pt-4 justify-content-start">
-                                <Button
-                                    label="Back"
-                                    severity="secondary"
-                                    icon="pi pi-arrow-left"
-                                    onClick={() => stepperRef.current.prevCallback()}
-                                />
-                            </div>
                         </StepperPanel>
                     </Stepper>
                 </Dialog.Panel>

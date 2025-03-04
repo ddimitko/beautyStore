@@ -13,6 +13,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -55,14 +56,18 @@ public class SecurityConfig{
         httpSecurity
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
+                .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers("/topics/**").permitAll()
+                        .requestMatchers("/app/**").permitAll()
                         .requestMatchers("/api/shops/create").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/api/management/**", "/api/shops/*/upload", "/api/payments/account").hasAuthority("ROLE_OWNER")
                         .requestMatchers("/api/appointment/employee/all").hasAnyAuthority("ROLE_OWNER", "ROLE_EMPLOYEE")
                         .requestMatchers("/api/me", "/api/profile/**","/api/appointment/all", "/api/appointment/cancel").authenticated()
                         .requestMatchers("/", "/auth/**", "/api/appointment/reserve", "/api/appointment/confirm",
-                                "/api/appointment/availability", "/api/appointment/reservation/*", "/api/shops", "/api/shops/*", "/api/calendar/days", "/api/payments/account_get", "/api/payments/create-checkout-session", "/uploads/**").permitAll()
+                                "/api/appointment/availability", "/api/appointment/reservation/cancel/*", "/api/shops", "/api/shops/*", "/api/calendar/days", "/api/payments/account_get", "/api/payments/create-checkout-session", "/uploads/**").permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider())

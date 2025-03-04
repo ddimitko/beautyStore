@@ -4,26 +4,19 @@ import com.ddimitko.beautyshopproject.Dto.requests.PaymentRequestDto;
 import com.ddimitko.beautyshopproject.entities.Shop;
 import com.ddimitko.beautyshopproject.services.ServicesService;
 import com.ddimitko.beautyshopproject.services.ShopService;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.gson.Gson;
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
 import com.stripe.model.AccountSession;
-import com.stripe.model.Customer;
-import com.stripe.model.CustomerSearchResult;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
-import com.stripe.param.AccountCreateParams;
-import com.stripe.param.AccountSessionCreateParams;
-import com.stripe.param.CustomerCreateParams;
-import com.stripe.param.CustomerSearchParams;
+import com.stripe.param.*;
 import com.stripe.param.checkout.SessionCreateParams;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -32,7 +25,6 @@ public class StripeService {
 
     private final ShopService shopService;
     private final ServicesService servicesService;
-    private final Gson gson = new Gson();
 
     public StripeService(ShopService shopService, @Value("#{environment.stripeApiKey}") String stripeApiKey, ServicesService servicesService) {
         this.shopService = shopService;
@@ -41,16 +33,16 @@ public class StripeService {
     }
 
     public Map<String, Object> createOrRetrieveConnectedAccount(Long shopId) throws StripeException {
-            // Check if the shop already has a Stripe account in your database
+            // Check if the shop already has a Stripe account in database
             Shop shop = shopService.getShopById(shopId);
             String connectedAccountId = shop.getStripeAccountId(); // Fetch from DB
 
             if (connectedAccountId == null) {
-                // No Stripe account exists, create one
+                // If no Stripe account is related to that shop, create one
                 AccountCreateParams params = AccountCreateParams.builder()
                         .setEmail(shop.getOwner().getEmail())
                         .setBusinessProfile(AccountCreateParams.BusinessProfile.builder()
-                                .setMcc("7230")
+                                .setMcc("7230") // 7230 Stands for 'Barber and Beauty Shops'
                                 .setName(shop.getName()).build())
                         .setBusinessType(AccountCreateParams.BusinessType.INDIVIDUAL)
                         .setType(AccountCreateParams.Type.CUSTOM)
@@ -69,8 +61,6 @@ public class StripeService {
                         .build();
 
                 Account account = Account.create(params);
-
-                // Save account ID in your DB
                 shop.setStripeAccountId(account.getId());
                 shopService.saveShop(shop);
 
@@ -154,6 +144,7 @@ public class StripeService {
 
         SessionCreateParams.Builder paramsBuilder =
                 SessionCreateParams.builder()
+                        .setExpiresAt(ZonedDateTime.now().plusMinutes(30).toEpochSecond())
                         .addLineItem(
                                 SessionCreateParams.LineItem.builder()
                                         .setPriceData(
@@ -178,36 +169,6 @@ public class StripeService {
         RequestOptions requestOptions =
                 RequestOptions.builder().setStripeAccount(shop.getStripeAccountId()).build();
 
-        /*if (payment.getCustomerId() != null) {
-            Customer customer;
-
-            CustomerSearchParams custSearchParams =
-                    CustomerSearchParams.builder().setQuery("email:'" + payment.getCustomerEmail() + "'").build();
-
-            CustomerSearchResult customerResult = Customer.search(custSearchParams, requestOptions);
-
-            if (customerResult.getData().isEmpty()) {
-                // 🔥 Create customer in the correct Stripe account
-                CustomerCreateParams customerCreateParams = CustomerCreateParams.builder()
-                        .setName(payment.getCustomerName())
-                        .setEmail(payment.getCustomerEmail()).build();
-
-                customer = Customer.create(customerCreateParams, requestOptions);
-            } else {
-                // ✅ Retrieve existing customer
-                customer = Customer.retrieve(customerResult.getData().getFirst().getId(), requestOptions);
-            }
-
-            // 🔥 Ensure customer is valid before adding it
-            if (customer != null && customer.getId() != null) {
-                paramsBuilder.setCustomer(customer.getId()).setCustomerEmail(customer.getEmail());
-            } else {
-                throw new IllegalStateException("❌ Error: Customer retrieval failed.");
-            }
-        }
-        */
-
-        // 🔥 Build final session params
         SessionCreateParams params = paramsBuilder.build();
 
         try {
@@ -219,7 +180,7 @@ public class StripeService {
 
             return response;
         } catch (StripeException e) {
-            System.err.println("❌ Error creating checkout session: " + e.getMessage());
+            System.err.println("Error creating checkout session: " + e.getMessage());
             throw e;
         }
     }
