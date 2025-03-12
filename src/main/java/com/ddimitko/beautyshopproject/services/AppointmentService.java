@@ -34,8 +34,9 @@ public class AppointmentService {
     private final ServiceRepository serviceRepository;
     private final CalendarService calendarService;
     private final AppointmentWebSocketConfig appointmentWebSocketConfig;
+    private final NotificationService notificationService;
 
-    public AppointmentService(RedisTemplate<String, Object> redisTemplate, ApplicationEventPublisher eventPublisher, AppointmentRepository appointmentRepository, EmployeeRepository employeeRepository, UserRepository userRepository, ServiceRepository serviceRepository, CalendarService calendarService, AppointmentWebSocketConfig appointmentWebSocketConfig) {
+    public AppointmentService(RedisTemplate<String, Object> redisTemplate, ApplicationEventPublisher eventPublisher, AppointmentRepository appointmentRepository, EmployeeRepository employeeRepository, UserRepository userRepository, ServiceRepository serviceRepository, CalendarService calendarService, AppointmentWebSocketConfig appointmentWebSocketConfig, NotificationService notificationService) {
         this.redisTemplate = redisTemplate;
         this.eventPublisher = eventPublisher;
         this.appointmentRepository = appointmentRepository;
@@ -44,6 +45,7 @@ public class AppointmentService {
         this.serviceRepository = serviceRepository;
         this.calendarService = calendarService;
         this.appointmentWebSocketConfig = appointmentWebSocketConfig;
+        this.notificationService = notificationService;
     }
 
     public List<Appointment> getAllAppointmentsForCustomer(long userId) {
@@ -179,6 +181,11 @@ public class AppointmentService {
         appointment.setAppointmentEnd(dto.getTimeSlotDto().getEndTime());
         appointment.setService(service);
         appointment.setStatus(AppointmentStatus.APPROVED);
+
+        notificationService.sendAppointmentNotification(appointment.getEmployee().getUser().getId(),
+                appointment.getFullName(),
+                appointment.getAppointmentDate(),
+                appointment.getAppointmentStart());
 
         return appointmentRepository.save(appointment);
     }

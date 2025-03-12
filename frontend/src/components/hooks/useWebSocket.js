@@ -18,8 +18,11 @@ const useWebSocket = (url, topic, onMessageReceived, shouldConnect) => {
                 reconnectDelay: 5000, // Auto-reconnect on failure
             });
 
+            console.log("Websocket URL", url);
+
             stompClient.onConnect = () => {
                 console.log("Connected to WebSocket");
+                console.log("STOMP connection status", stompClient.connected);
                 stompClient.subscribe(topic, (message) => {
                     onMessageReceived(JSON.parse(message.body));
                 });

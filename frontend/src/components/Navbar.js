@@ -5,21 +5,55 @@ import {Link, useLocation, useNavigate} from "react-router-dom";
 import {TextInput} from "flowbite-react";
 import {CiSearch} from "react-icons/ci";
 import {SearchContext} from "./SearchProvider";
+import useWebSocket from "./hooks/useWebSocket";
 
 function Navbar() {
     const { isAuthenticated, user, logout } = useAuth();
     const [isModalOpen, setModalOpen] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
+    const [notifOpen, setNotifOpen] = useState(false);
     const location = useLocation();
     const menuRef = useRef(null);
-    let debounceTimeout;
+    const notifRef = useRef(null);
+    const debounceTimeout = useRef(null);
 
     const { setSearchTerm } = useContext(SearchContext);
     const navigate = useNavigate();
     const [previousPage, setPreviousPage] = useState(null);
 
+    const [notifications, setNotifications] = useState([]);
+    const [unreadCount, setUnreadCount] = useState(0);
+
     // Function to determine if a link is active
     const isActive = (path) => location.pathname === path;
+
+    const fetchNotifications = async () => {
+        try {
+            const response = await fetch("http://localhost:8080/api/notifications", {
+                method: "GET",
+                credentials: "include", // Ensures cookies (tokens) are sent with the request
+                headers: {
+                    "Content-Type": "application/json"
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error("Failed to fetch notifications");
+            }
+
+            const data = await response.json();
+            setNotifications(data);
+        } catch (error) {
+            console.error("Error fetching notifications:", error);
+        }
+    };
+
+    useEffect(() => {
+        if (isAuthenticated && user?.id) {
+            fetchNotifications();
+        }
+    }, [isAuthenticated, user]);  // Ensure the user is available
+
 
     useEffect(() => {
         if (location.pathname !== "/shops") {
@@ -32,10 +66,12 @@ function Navbar() {
         setSearchTerm(value);
 
         // Clear any existing timeout
-        clearTimeout(debounceTimeout);
+        if(debounceTimeout.current) {
+            clearTimeout(debounceTimeout);
+        }
 
         // Set a new timeout
-        debounceTimeout = setTimeout(() => {
+        debounceTimeout.current = setTimeout(() => {
             if (value.trim() === "") {
                 if (previousPage) {
                     navigate(previousPage);
@@ -50,8 +86,10 @@ function Navbar() {
     useEffect(() => {
         const handleClickOutside = (event) => {
             // Check if the click is outside the dropdown menu
-            if (menuRef.current && !menuRef.current.contains(event.target)) {
+            if (menuRef.current && !menuRef.current.contains(event.target)
+                && notifRef.current && !notifRef.current.contains(event.target)) {
                 setMenuOpen(false);
+                setNotifOpen(false);
             }
         };
 
@@ -62,7 +100,70 @@ function Navbar() {
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, []);
+    }, [menuRef, notifRef]);
+
+    const handleToggleMenu = () => {
+        setMenuOpen((prev) => !prev);
+        setNotifOpen(false);
+    }
+
+    const handleToggleNotifications = async () => {
+        if (!notifOpen) {
+            setNotifOpen(true);
+            setMenuOpen(false);
+
+            // Mark all as read when opening
+            await fetch(`http://localhost:8080/api/notifications/read-all/`, {
+                method: "PUT",
+                credentials: "include",
+            });
+
+            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+            setUnreadCount(0);
+        } else {
+            setNotifOpen(false);
+        }
+    }
+
+    const handleNewNotification = (newNotification) => {
+        setNotifications((prev) => {
+            const updatedNotifications = [...prev, newNotification].sort(
+                (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+            );
+
+            // Play notification sound for important updates
+            if (newNotification) {
+                const audio = new Audio("/notification.wav");
+                audio.play();
+            }
+
+            return updatedNotifications;
+        });
+
+        setUnreadCount((prev) => prev + 1);
+    };
+
+    const markAsRead = async (notificationId) => {
+        await fetch(`http://localhost:8080/api/notifications/read/${notificationId}`, {
+            method: "POST",
+        });
+
+        setNotifications((prev) =>
+            prev.map((n) =>
+                n.id === notificationId ? { ...n, read: true } : n
+            )
+        );
+    };
+
+    const shouldSubscribe = isAuthenticated && !!user?.id;
+    const notificationTopic = shouldSubscribe ? `/topic/notifications/${user.id}` : null;
+
+    useWebSocket(
+        "http://localhost:8080/ws",
+        notificationTopic,
+        handleNewNotification,
+        shouldSubscribe
+    );
 
 
     return (
@@ -114,9 +215,12 @@ function Navbar() {
 
                         {isAuthenticated ? (
                             <div
-                                className="absolute inset-y-0 right-0 flex items-center pr-2 sm:static sm:inset-auto sm:ml-6 sm:pr-0">
+                                className="relative flex rounded-full bg-gray-200 ml-2 text-sm focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-800" ref={notifRef}>
                                 <button type="button"
-                                        className="relative rounded-full bg-transparent p-1 text-gray-400 hover:text-gray-800 hover:shadow focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-800">
+                                        id="notif-menu-button"
+                                        aria-expanded="false"
+                                        className="relative rounded-full bg-transparent p-1 text-gray-400 hover:text-gray-800 hover:shadow focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-800"
+                                onClick={handleToggleNotifications}>
                                 <span className="absolute -inset-1.5"></span>
                                 <span className="sr-only">View notifications</span>
                                 <svg className="size-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5"
@@ -124,7 +228,33 @@ function Navbar() {
                                     <path strokeLinecap="round" strokeLinejoin="round"
                                           d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"/>
                                 </svg>
+                                    {unreadCount > 0 && (
+                                        <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs px-1 rounded-full">
+                                                {unreadCount}
+                                            </span>
+                                    )}
                             </button>
+                                {notifOpen && (
+                                    <div
+                                        className="absolute right-0 z-10 top-full mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 focus:outline-none"
+                                        role="menu" aria-orientation="vertical" aria-labelledby="notif-menu-button"
+                                        tabIndex="-1">
+                                        <div className="p-2">
+                                            {notifications.length > 0 ? (
+                                                notifications.map((n) => (
+                                                    <div key={n.id} className="p-2 border-b last:border-none text-sm text-gray-700">
+                                                        <p className="p-2 text-center w-auto">{n.message}</p>
+                                                        <small className="text-xs text-gray-500 text-center">
+                                                            {new Date(n.createdAt).toLocaleString()}
+                                                        </small>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <p className="p-2 text-center text-sm text-gray-500">No new notifications</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
                             {/*}Profile dropdown*/}
                             <div className="relative ml-3" ref={menuRef}>
@@ -132,7 +262,7 @@ function Navbar() {
                                     <button type="button"
                                             className="relative flex rounded-full bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-800"
                                             id="user-menu-button" aria-expanded="false" aria-haspopup="true"
-                                    onClick={() => setMenuOpen(!menuOpen)}>
+                                    onClick={handleToggleMenu}>
                                         <span className="absolute -inset-1.5"></span>
                                         <span className="sr-only">Open user menu</span>
                                         <img className="size-8 rounded-full"
@@ -143,7 +273,7 @@ function Navbar() {
 
                                 {menuOpen && (
                                 <div
-                                    className="absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 focus:outline-none"
+                                    className="absolute right-0 z-10 top-full mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 focus:outline-none"
                                     role="menu" aria-orientation="vertical" aria-labelledby="user-menu-button"
                                     tabIndex="-1">
                                     <a className="block px-4 py-2 text-sm font-thin" role="menuitem" disabled>{user.firstName + " " + user.lastName}</a>

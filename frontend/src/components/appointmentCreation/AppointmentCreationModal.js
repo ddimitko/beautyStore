@@ -3,7 +3,6 @@ import { StepperPanel } from "primereact/stepperpanel";
 import React, {useContext, useState, useRef, useEffect, useMemo} from "react";
 import {Dialog} from "@headlessui/react";
 import { FormControl, InputLabel, Select, MenuItem, TextField } from "@mui/material";
-import { Button } from "primereact/button"
 import { DatePicker, LocalizationProvider } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { AuthContext } from "../AuthContext";
@@ -14,6 +13,7 @@ import SelectPaymentMethod from "./SelectPaymentMethod";
 import {X} from "lucide-react";
 import useWebSocket from "../hooks/useWebSocket";
 import dayjs from "dayjs";
+import { Button } from "flowbite-react";
 
 function AppointmentCreationModal({ isOpen, onClose, shop }) {
     const { isAuthenticated, user } = useContext(AuthContext);
@@ -173,6 +173,8 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                 throw new Error('Error fetching available slots');
             }
             const data = await response.json();
+            setTimeSlot(null);
+
             setTimeSlots(data);
         } catch (error) {
             console.error('Error fetching available slots:', error);
@@ -197,10 +199,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
         }
     };
 
-    const handleTimeSlotInternal = (event) => {
-        const selectedTimeSlotStart = event.target.value;
-        console.log("Event value:", selectedTimeSlotStart);
-
+    const handleTimeSlotInternal = (selectedTimeSlotStart) => {
         // Convert to string if necessary to match the type
         const selectedTimeSlotObj = timeSlots.find(
             (ts) => ts.startTime.toString() === selectedTimeSlotStart.toString()
@@ -340,7 +339,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                         {/* Step 1: Select Employee, Service, Date & Time */}
                         <StepperPanel header="Select Details">
                             <div className="flex flex-column h-12rem">
-                                <div className="border-2 border-dashed surface-border border-round surface-ground flex-auto flex-col justify-content-center align-items-center font-medium">
+                                <div className="surface-ground flex-auto flex-col justify-content-center align-items-center font-medium">
                                     <FormControl fullWidth>
                                     <InputLabel>Employee</InputLabel>
                                     <Select
@@ -378,17 +377,21 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                 </LocalizationProvider>
                                 {timeSlots.length > 0 && (
                                     <FormControl fullWidth>
-                                        <InputLabel>Available Time Slots</InputLabel>
-                                        <Select
-                                            value={timeSlot?.startTime || ""}
-                                            onChange={handleTimeSlotInternal}
-                                        >
+                                        <h3 className="mt-2 text-center">Available Time Slots</h3>
+                                        <div className="grid grid-cols-5 gap-2 mt-2">
                                             {timeSlots.map((slot) => (
-                                                <MenuItem key={slot.startTime} value={slot.startTime}>
+                                                <Button
+                                                    className={`
+                                ${slot.startTime === timeSlot?.startTime ? 'bg-blue-500 text-white' : 'bg-gray-200'}
+                                hover:bg-blue-600
+                            `}
+                                                    key={slot.startTime}
+                                                    color="gray"
+                                                    onClick={() => handleTimeSlotInternal(slot.startTime)}>
                                                     {slot.startTime} - {slot.endTime}
-                                                </MenuItem>
+                                                </Button>
                                             ))}
-                                        </Select>
+                                        </div>
                                     </FormControl>
                                 )}
                                 </div>
