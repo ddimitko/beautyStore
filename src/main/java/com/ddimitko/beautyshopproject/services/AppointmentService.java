@@ -9,7 +9,6 @@ import com.ddimitko.beautyshopproject.nomenclatures.AppointmentStatus;
 import com.ddimitko.beautyshopproject.repositories.*;
 import com.ddimitko.beautyshopproject.repositories.UserRepository;
 import jakarta.transaction.Transactional;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.threeten.extra.Interval;
 import org.springframework.stereotype.Service;
@@ -26,8 +25,6 @@ public class AppointmentService {
 
     private final RedisTemplate<String, Object> redisTemplate;
 
-    private final ApplicationEventPublisher eventPublisher;
-
     private final AppointmentRepository appointmentRepository;
     private final EmployeeRepository employeeRepository;
     private final UserRepository userRepository;
@@ -36,9 +33,8 @@ public class AppointmentService {
     private final AppointmentWebSocketConfig appointmentWebSocketConfig;
     private final NotificationService notificationService;
 
-    public AppointmentService(RedisTemplate<String, Object> redisTemplate, ApplicationEventPublisher eventPublisher, AppointmentRepository appointmentRepository, EmployeeRepository employeeRepository, UserRepository userRepository, ServiceRepository serviceRepository, CalendarService calendarService, AppointmentWebSocketConfig appointmentWebSocketConfig, NotificationService notificationService) {
+    public AppointmentService(RedisTemplate<String, Object> redisTemplate, AppointmentRepository appointmentRepository, EmployeeRepository employeeRepository, UserRepository userRepository, ServiceRepository serviceRepository, CalendarService calendarService, AppointmentWebSocketConfig appointmentWebSocketConfig, NotificationService notificationService) {
         this.redisTemplate = redisTemplate;
-        this.eventPublisher = eventPublisher;
         this.appointmentRepository = appointmentRepository;
         this.employeeRepository = employeeRepository;
         this.userRepository = userRepository;
@@ -68,16 +64,6 @@ public class AppointmentService {
         }
     }
 
-    private void validateSlot(List<TimeSlotDto> availableSlots, LocalTime start, LocalTime end, LocalDate date) {
-        boolean isValidSlot = availableSlots.stream()
-                .anyMatch(slot -> slot.getStartTime().equals(start) &&
-                        slot.getEndTime().equals(end) &&
-                        slot.getDate().equals(date));
-        if (!isValidSlot) {
-            throw new RuntimeException("Slot is not valid.");
-        }
-    }
-
     @Transactional
     public String reserveAppointment(AppointmentRequestDto dto) {
         if (appointmentRepository.isEmployeeAssigningThemselves(dto.getEmployeeId(), dto.getCustomerId())) {
@@ -89,22 +75,7 @@ public class AppointmentService {
 
         String redisKey = "reservation:" + sessionToken;
 
-        //Store session details in Redis (expires in 10 minutes)
-        Map<String, Object> sessionData = new HashMap<>();
-        if(dto.getCustomerId() != null) {
-            sessionData.put("customerId", dto.getCustomerId());
-        }
-        sessionData.put("employeeId", dto.getEmployeeId());
-        sessionData.put("email", dto.getEmail());
-        sessionData.put("fullName", dto.getFullName());
-        sessionData.put("phone", dto.getPhone());
-        sessionData.put("serviceId", dto.getServiceId());
-        sessionData.put("date", dto.getTimeSlotDto().getDate().toString());
-        sessionData.put("startTime", dto.getTimeSlotDto().getStartTime().toString());
-        sessionData.put("endTime", dto.getTimeSlotDto().getEndTime().toString());
-
-        redisTemplate.opsForHash().putAll(redisKey, sessionData);
-        redisTemplate.expire(redisKey, 10, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().set(redisKey, dto, 10, TimeUnit.MINUTES);
 
         updateTimeSlots(dto.getEmployeeId(), dto.getServiceId(), dto.getTimeSlotDto().getDate());
 
@@ -115,36 +86,24 @@ public class AppointmentService {
     public boolean confirmAppointment(String sessionToken) {
         String redisKey = "reservation:" + sessionToken;
 
+        System.out.println(redisKey);
+
         // Check if session exists
         if (Boolean.FALSE.equals(redisTemplate.hasKey(redisKey))) {
             return false; // Session expired or invalid
         }
 
         // Retrieve session details
-        Map<Object, Object> sessionData = redisTemplate.opsForHash().entries(redisKey);
-        if (sessionData.isEmpty()) {
+        AppointmentRequestDto sessionData = (AppointmentRequestDto) redisTemplate.opsForValue().get(redisKey);
+
+        if (sessionData == null) {
             return false; // No data found, possibly expired
         }
-
-        // Convert session data to DTO
-        AppointmentRequestDto dto = new AppointmentRequestDto();
-        dto.setCustomerId(sessionData.get("customerId") != null ? Long.valueOf(String.valueOf(sessionData.get("customerId"))) : null);
-        dto.setEmployeeId(Long.parseLong(String.valueOf(sessionData.get("employeeId"))));
-        dto.setServiceId(Integer.parseInt(String.valueOf(sessionData.get("serviceId"))));
-        dto.setFullName((String) sessionData.get("fullName"));
-        dto.setEmail((String) sessionData.get("email"));
-        dto.setPhone((String) sessionData.get("phone"));
-
-        TimeSlotDto timeSlot = new TimeSlotDto();
-        timeSlot.setDate(LocalDate.parse((String) sessionData.get("date")));
-        timeSlot.setStartTime(LocalTime.parse((String) sessionData.get("startTime")));
-        timeSlot.setEndTime(LocalTime.parse((String) sessionData.get("endTime")));
-        dto.setTimeSlotDto(timeSlot);
 
         // Remove session after confirmation
         redisTemplate.delete(redisKey);
 
-        addAppointment(dto);
+        addAppointment(sessionData);
         return true;
     }
 
@@ -193,8 +152,10 @@ public class AppointmentService {
     @Transactional
     public void cancelReservation(String sessionToken) {
         String redisKey = "reservation:" + sessionToken;
-        if (Boolean.TRUE.equals(redisTemplate.hasKey(redisKey))) {
+        AppointmentRequestDto sessionData = (AppointmentRequestDto) redisTemplate.opsForValue().get(redisKey);
+        if (sessionData != null) {
             redisTemplate.delete(redisKey);
+            updateTimeSlots(sessionData.getEmployeeId(), sessionData.getServiceId(), sessionData.getTimeSlotDto().getDate());
         }
     }
 
@@ -301,16 +262,16 @@ public class AppointmentService {
         Set<Interval> reservedIntervals = new HashSet<>();
 
         for (String key : reservationKeys) {
-            Map<Object, Object> sessionData = redisTemplate.opsForHash().entries(key);
+            AppointmentRequestDto sessionData = (AppointmentRequestDto) redisTemplate.opsForValue().get(key);
 
             // Ensure data exists and belongs to the correct employee & date
-            if (sessionData.isEmpty()) continue;
-            if (!String.valueOf(userId).equals(String.valueOf(sessionData.get("employeeId")))) continue;
-            if (!date.toString().equals(sessionData.get("date"))) continue;
+            if (sessionData == null) continue;
+            if(!Objects.equals(sessionData.getEmployeeId(), userId)) continue;
+            if(!Objects.equals(sessionData.getTimeSlotDto().getDate(), date)) continue;
 
             // Parse start & end time
-            LocalTime startTime = LocalTime.parse((String) sessionData.get("startTime"));
-            LocalTime endTime = LocalTime.parse((String) sessionData.get("endTime"));
+            LocalTime startTime = sessionData.getTimeSlotDto().getStartTime();
+            LocalTime endTime = sessionData.getTimeSlotDto().getEndTime();
 
             Instant start = ZonedDateTime.of(date, startTime, ZoneId.systemDefault()).toInstant();
             Instant end = ZonedDateTime.of(date, endTime, ZoneId.systemDefault()).toInstant();
@@ -329,6 +290,7 @@ public class AppointmentService {
     public void cancelAppointment(Long appointmentId) {
         Appointment cancelAppointment = appointmentRepository.findById(appointmentId).orElseThrow(() -> new RuntimeException("Appointment not found."));
         cancelAppointment.setStatus(AppointmentStatus.CANCELLED);
+        updateTimeSlots(cancelAppointment.getEmployee().getId(), cancelAppointment.getService().getId(), cancelAppointment.getAppointmentDate());
         appointmentRepository.save(cancelAppointment);
     }
 

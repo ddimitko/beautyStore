@@ -3,7 +3,7 @@ import { FormControl, InputLabel, Select, MenuItem } from "@mui/material";
 import { Button } from "primereact/button";
 import Checkout from "../Checkout";
 
-function SelectPaymentMethod({ sessionToken, appointmentData, onNext, onBack, shopId}) {
+function SelectPaymentMethod({ appointmentData, sessionToken, onNext, onBack, shopId}) {
     const [paymentMethod, setPaymentMethod] = useState("");
     const [paymentCompleted, setPaymentCompleted] = useState(false);
     const [connectedAccountId, setConnectedAccountId] = useState(null);
@@ -38,7 +38,7 @@ function SelectPaymentMethod({ sessionToken, appointmentData, onNext, onBack, sh
                 throw new Error(errorMessage || "Booking failed");
             }
 
-            sessionStorage.removeItem("sessionToken");
+            //sessionStorage.removeItem("sessionToken");
 
             onNext.current.nextCallback();
 
@@ -48,6 +48,13 @@ function SelectPaymentMethod({ sessionToken, appointmentData, onNext, onBack, sh
     }, [sessionToken, onNext]);
 
     const handleCardPayment = async () => {
+
+        if(!appointmentData)
+        {
+            console.error("Appointment Data is Null.");
+            return;
+        }
+
         try {
             const response = await fetch(`http://localhost:8080/api/payments/create-checkout-session`, {
                 method: "POST",
@@ -102,7 +109,7 @@ function SelectPaymentMethod({ sessionToken, appointmentData, onNext, onBack, sh
 
                 {paymentMethod === "credit_card" && sessionToken && clientSecret && (
                     <div className="flex justify-center">
-                    <Checkout connectedAccountId={connectedAccountId} clientSecret={clientSecret} sessionToken={sessionToken} onNext={onNext}/>
+                        <Checkout connectedAccountId={connectedAccountId} clientSecret={clientSecret} sessionToken={sessionToken} onNext={onNext}/>
                     </div>
                 )}
             </div>

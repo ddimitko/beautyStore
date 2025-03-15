@@ -31,9 +31,8 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
     const [timeSlots, setTimeSlots] = useState([]);
     const [timeSlot, setTimeSlot] = useState(null);
 
-    // const [paymentMethod, setPaymentMethod] = useState("");
-
     const [appointmentData, setAppointmentData] = useState(null);
+    const [sessionToken, setSessionToken] = useState(null);
 
     const shouldSubscribe = Boolean(selectedDate && employee && service);
 
@@ -244,16 +243,14 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
             // Get the session token from the response
             const sessionToken = await response.text();  // The backend returns the sessionToken as plain text
 
+            console.log(sessionToken);
+            console.log(sessionToken.toString());
+
             if (!sessionToken) {
                 throw new Error("Failed to create session. Please try again.");
             }
 
-            // Store the session token in sessionStorage
-            sessionStorage.clear();
-            sessionStorage.setItem("sessionToken", sessionToken);
-
-            // Proceed to the next stage (this can be your stepper callback)
-            stepperRef.current.nextCallback(appointmentData);
+            return sessionToken;
 
         } catch (error) {
             alert(error.message);
@@ -261,16 +258,15 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
     };
 
     const cancelReservation = async () => {
-        const sessionData = sessionStorage.getItem("sessionToken");
-        if (!sessionData) return;
+        if (!sessionToken) return;
 
         try {
-            await fetch(`http://localhost:8080/api/appointment/reservation/cancel/${sessionData}`, {
+            await fetch(`http://localhost:8080/api/appointment/reservation/cancel/${sessionToken}`, {
                 method: "DELETE",
                 credentials: "include",
             });
 
-            sessionStorage.removeItem("sessionToken"); // Remove locally
+            //sessionStorage.removeItem("sessionToken"); // Remove locally
             console.log("Reservation cancelled.");
         } catch (error) {
             console.error("Error canceling reservation:", error);
@@ -296,12 +292,11 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
         if (isAuthenticated) {
             newAppointment.customerId = user.id;
         }
-            newAppointment.fullName = accountDetails.name;
-            newAppointment.email = accountDetails.email;
-            newAppointment.phone = accountDetails.phone;
+        newAppointment.fullName = accountDetails.name;
+        newAppointment.email = accountDetails.email;
+        newAppointment.phone = accountDetails.phone;
 
         console.log(newAppointment);
-
 
         setAppointmentData(newAppointment);
     };
@@ -309,7 +304,14 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
     useEffect(() => {
         if (appointmentData) {
             console.log("Calling reserveAppointment:", appointmentData);
-            reserveAppointment(appointmentData); // Ensures it runs AFTER state updates
+            reserveAppointment(appointmentData).then(
+                token => {
+                    if(token) {
+                        setSessionToken(token);
+                        stepperRef.current.nextCallback(appointmentData);
+                    }
+                }
+            );
         }
     }, [appointmentData]); // Runs when `appointmentData` updates
 
@@ -341,59 +343,59 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                             <div className="flex flex-column h-12rem">
                                 <div className="surface-ground flex-auto flex-col justify-content-center align-items-center font-medium">
                                     <FormControl fullWidth>
-                                    <InputLabel>Employee</InputLabel>
-                                    <Select
-                                        value={employee?.userId || ""}
-                                        onChange={handleChangeEmployee}
-                                    >
-                                        {shop.employeeList.filter(emp => emp.userId !== user?.id) // Exclude logged-in user
-                                            .map(emp => (
-                                            <MenuItem key={emp.userId} value={emp.userId}>
-                                                {emp.fullName}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-                                <FormControl fullWidth disabled={!employee}>
-                                    <InputLabel>Service</InputLabel>
-                                    <Select
-                                        value={service?.id || ""}
-                                        onChange={handleChangeService}
-                                    >
-                                        {serviceList.map((svc) => (
-                                            <MenuItem key={svc.id} value={svc.id}>
-                                                {svc.name}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-                                <LocalizationProvider dateAdapter={AdapterDayjs}>
-                                    <DatePicker value={selectedDate} onChange={handleDateChangeInternal}
-                                                onMonthChange={handleMonthChange}
-                                        // Disable dates not available (or in the past)
-                                                shouldDisableDate={(date) => !isDateAvailable(date)}
-                                                onOpen={() => setDatePickerOpen(true)}
-                                                onClose={() => setDatePickerOpen(false)}/>
-                                </LocalizationProvider>
-                                {timeSlots.length > 0 && (
-                                    <FormControl fullWidth>
-                                        <h3 className="mt-2 text-center">Available Time Slots</h3>
-                                        <div className="grid grid-cols-5 gap-2 mt-2">
-                                            {timeSlots.map((slot) => (
-                                                <Button
-                                                    className={`
+                                        <InputLabel>Employee</InputLabel>
+                                        <Select
+                                            value={employee?.userId || ""}
+                                            onChange={handleChangeEmployee}
+                                        >
+                                            {shop.employeeList.filter(emp => emp.userId !== user?.id) // Exclude logged-in user
+                                                .map(emp => (
+                                                    <MenuItem key={emp.userId} value={emp.userId}>
+                                                        {emp.fullName}
+                                                    </MenuItem>
+                                                ))}
+                                        </Select>
+                                    </FormControl>
+                                    <FormControl fullWidth disabled={!employee}>
+                                        <InputLabel>Service</InputLabel>
+                                        <Select
+                                            value={service?.id || ""}
+                                            onChange={handleChangeService}
+                                        >
+                                            {serviceList.map((svc) => (
+                                                <MenuItem key={svc.id} value={svc.id}>
+                                                    {svc.name}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+                                    <LocalizationProvider dateAdapter={AdapterDayjs}>
+                                        <DatePicker value={selectedDate} onChange={handleDateChangeInternal}
+                                                    onMonthChange={handleMonthChange}
+                                            // Disable dates not available (or in the past)
+                                                    shouldDisableDate={(date) => !isDateAvailable(date)}
+                                                    onOpen={() => setDatePickerOpen(true)}
+                                                    onClose={() => setDatePickerOpen(false)}/>
+                                    </LocalizationProvider>
+                                    {timeSlots.length > 0 && (
+                                        <FormControl fullWidth>
+                                            <h3 className="mt-2 text-center">Available Time Slots</h3>
+                                            <div className="grid grid-cols-5 gap-2 mt-2">
+                                                {timeSlots.map((slot) => (
+                                                    <Button
+                                                        className={`
                                 ${slot.startTime === timeSlot?.startTime ? 'bg-blue-500 text-white' : 'bg-gray-200'}
                                 hover:bg-blue-600
                             `}
-                                                    key={slot.startTime}
-                                                    color="gray"
-                                                    onClick={() => handleTimeSlotInternal(slot.startTime)}>
-                                                    {slot.startTime} - {slot.endTime}
-                                                </Button>
-                                            ))}
-                                        </div>
-                                    </FormControl>
-                                )}
+                                                        key={slot.startTime}
+                                                        color="gray"
+                                                        onClick={() => handleTimeSlotInternal(slot.startTime)}>
+                                                        {slot.startTime} - {slot.endTime}
+                                                    </Button>
+                                                ))}
+                                            </div>
+                                        </FormControl>
+                                    )}
                                 </div>
                             </div>
                             <div className="flex pt-4 justify-end">
@@ -411,31 +413,31 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                         <StepperPanel header="Enter Account Details">
                             <div className="flex flex-column h-12rem">
                                 <div className="border-2 border-dashed surface-border border-round surface-ground flex-auto flex justify-content-center align-items-center font-medium">
-                                <TextField
-                                    fullWidth
-                                    label="Full Name"
-                                    value={accountDetails.name}
-                                    onChange={(e) =>
-                                        setAccountDetails({
-                                            ...accountDetails,
-                                            name: e.target.value,
-                                        })
-                                    }
-                                    disabled={isAuthenticated}
-                                    required
-                                />
-                                <TextField
-                                    fullWidth
-                                    label="Phone Number"
-                                    value={accountDetails.phone}
-                                    onChange={(e) =>
-                                        setAccountDetails({
-                                            ...accountDetails,
-                                            phone: e.target.value,
-                                        })
-                                    }
-                                    disabled={isAuthenticated}
-                                />
+                                    <TextField
+                                        fullWidth
+                                        label="Full Name"
+                                        value={accountDetails.name}
+                                        onChange={(e) =>
+                                            setAccountDetails({
+                                                ...accountDetails,
+                                                name: e.target.value,
+                                            })
+                                        }
+                                        disabled={isAuthenticated}
+                                        required
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        label="Phone Number"
+                                        value={accountDetails.phone}
+                                        onChange={(e) =>
+                                            setAccountDetails({
+                                                ...accountDetails,
+                                                phone: e.target.value,
+                                            })
+                                        }
+                                        disabled={isAuthenticated}
+                                    />
                                     <TextField
                                         fullWidth
                                         label="Email"
@@ -450,15 +452,15 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                         required
                                         disabled={isAuthenticated}
                                     />
+                                </div>
                             </div>
-                            </div>
-                                <div className="flex pt-4 justify-between">
+                            <div className="flex pt-4 justify-between">
                                 <Button
                                     label="Back"
                                     severity="secondary"
                                     icon="pi pi-arrow-left"
                                     onClick={() => {// Clear any stored appointment reservation details when going back
-                                        sessionStorage.clear();
+                                        cancelReservation();
                                         // Then go back one step in your stepper
                                         stepperRef.current.prevCallback();
                                     }}
@@ -477,10 +479,10 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                             <div className="flex flex-column h-12rem">
                                 <div className="border-2 border-dashed surface-border border-round surface-ground flex-auto flex justify-content-center align-items-center font-medium">
                                     <SelectPaymentMethod shopId={shop.id}
-                                                         sessionToken={sessionStorage.getItem("sessionToken")}
+                                                         sessionToken={sessionToken}
                                                          appointmentData={appointmentData}
-                                        onNext={stepperRef}
-                                        onBack={() => stepperRef.current.prevCallback()}
+                                                         onNext={stepperRef}
+                                                         onBack={() => stepperRef.current.prevCallback()}
                                     />
                                 </div>
                             </div>

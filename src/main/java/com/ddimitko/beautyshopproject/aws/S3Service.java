@@ -38,8 +38,8 @@ public class S3Service {
 
     public S3Service(
             @Value("${aws.s3.bucket-name}") String bucketName,
-            @Value("${aws.s3.access-key}") String accessKey,
-            @Value("${aws.s3.secret-key}") String secretKey,
+            @Value("test") String accessKey,
+            @Value("test") String secretKey,
             @Value("${aws.s3.region}") String region) {
 
         this.bucketName = bucketName;
