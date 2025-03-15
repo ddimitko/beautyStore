@@ -38,8 +38,6 @@ function SelectPaymentMethod({ appointmentData, sessionToken, onNext, onBack, sh
                 throw new Error(errorMessage || "Booking failed");
             }
 
-            //sessionStorage.removeItem("sessionToken");
-
             onNext.current.nextCallback();
 
         } catch (error) {

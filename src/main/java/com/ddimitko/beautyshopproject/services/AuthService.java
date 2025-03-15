@@ -16,6 +16,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+
 
 @Service
 public class AuthService {
@@ -24,11 +26,11 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final UserService userService;
     private final UserMapper userMapper;
-
     private final RedisTemplate<String, Object> redisTemplate;
-    private final String REFRESH_TOKEN_KEY = "refresh_token";
+    private static final String REFRESH_TOKEN_PREFIX = "refresh_token:";
 
-    public AuthService(JwtService jwtService, AuthenticationManager authenticationManager, UserService userService, UserMapper userMapper, RedisTemplate<String, Object> redisTemplate) {
+    public AuthService(JwtService jwtService, AuthenticationManager authenticationManager, UserService userService,
+                       UserMapper userMapper, RedisTemplate<String, Object> redisTemplate) {
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
         this.userService = userService;
@@ -37,30 +39,23 @@ public class AuthService {
     }
 
     public LoginResponse login(LoginRequest loginRequest) {
-        System.out.println("Attempting login for: " + loginRequest.getEmail());
-
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword())
         );
-        System.out.println("Authentication result: " + authentication.isAuthenticated());
+
         if (authentication.isAuthenticated()) {
-
             UserDetails userDetails = (UserDetails) authentication.getPrincipal();
-            User user = userService.findUserByEmail(userDetails.getUsername()).orElseThrow(()-> new RuntimeException("User not found."));
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+            User user = userService.findUserByEmail(userDetails.getUsername())
+                    .orElseThrow(() -> new RuntimeException("User not found."));
 
-            System.out.println("Authentication successful for: " + loginRequest.getEmail());
-            String token = jwtService.generateToken(loginRequest.getEmail());
-            String refreshToken = jwtService.generateRefreshToken(loginRequest.getEmail());
+            String accessToken = jwtService.generateToken(user.getEmail());
+            String refreshToken = jwtService.generateRefreshToken(user.getEmail());
 
-            // Store refresh token in Redis
-            redisTemplate.opsForHash().put(REFRESH_TOKEN_KEY, loginRequest.getEmail(), refreshToken);
-            UserResponseDto userDto = userMapper.mapUserToResponseDto(user);
-            System.out.println("🔍 Checking SecurityContextHolder: " + SecurityContextHolder.getContext().getAuthentication());
-            return new LoginResponse(token, refreshToken, userDto);
+            redisTemplate.opsForValue().set(REFRESH_TOKEN_PREFIX + user.getEmail(), refreshToken, Duration.ofDays(30));
+
+            return new LoginResponse(accessToken, refreshToken, userMapper.mapUserToResponseDto(user));
         } else {
-            System.out.println("Authentication failed for: " + loginRequest.getEmail());
-            throw new UsernameNotFoundException("Invalid user request!");
+            throw new UsernameNotFoundException("Invalid credentials!");
         }
     }
 
@@ -76,7 +71,9 @@ public class AuthService {
 
     public void logout(String refreshToken) {
         String username = jwtService.extractUsername(refreshToken);
-        redisTemplate.opsForHash().delete(REFRESH_TOKEN_KEY, username);
+        if (username != null) {
+            redisTemplate.delete(REFRESH_TOKEN_PREFIX + username);
+        }
         SecurityContextHolder.clearContext();
     }
 }

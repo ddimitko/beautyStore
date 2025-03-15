@@ -32,8 +32,8 @@ public class AuthController {
         LoginResponse response = authService.login(loginRequest);
 
         // Send updated tokens as HTTP-only cookies
-        ResponseCookie accessCookie = createHttpOnlyCookie("accessToken", response.getAccessToken(), 60 * 15); // 15 minutes
-        ResponseCookie refreshCookie = createHttpOnlyCookie("refreshToken", response.getRefreshToken(), 7 * 24 * 60 * 60); // 7 days
+        ResponseCookie accessCookie = createHttpOnlyCookie("accessToken", response.getAccessToken(), 900);
+        ResponseCookie refreshCookie = createHttpOnlyCookie("refreshToken", response.getRefreshToken(), 2592000); // 7 days
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, accessCookie.toString())
@@ -44,25 +44,21 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<?> logout(@CookieValue(name = "refreshToken", required = false) String refreshToken) {
         if (refreshToken == null || refreshToken.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.OK).body("No action needed, already logged out");
+            return ResponseEntity.ok("No action needed, already logged out.");
         }
 
-        try {
-            authService.logout(refreshToken);
-            ResponseCookie accessCookie = ResponseCookie.from("accessToken", "").path("/")
-                    .maxAge(0).build();
-            ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", "").path("/")
-                    .maxAge(0).build();
+        authService.logout(refreshToken);
 
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.SET_COOKIE, accessCookie.toString())
-                    .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
-                    .body("Logged out successfully");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error during logout: " + e.getMessage());
-        }
+        ResponseCookie accessCookie = ResponseCookie.from("accessToken", "").path("/")
+                .maxAge(0).build();
+        ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", "").path("/")
+                .maxAge(0).build();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, accessCookie.toString())
+                .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
+                .body("Logged out successfully.");
     }
-
 
     // Utility method for creating HTTP-only cookies
     private ResponseCookie createHttpOnlyCookie(String name, String value, long maxAge) {
