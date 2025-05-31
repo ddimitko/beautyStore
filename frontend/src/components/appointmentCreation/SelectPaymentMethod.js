@@ -3,7 +3,7 @@ import { FormControl, InputLabel, Select, MenuItem } from "@mui/material";
 import { Button } from "primereact/button";
 import Checkout from "../Checkout";
 
-function SelectPaymentMethod({ appointmentData, sessionToken, onNext, onBack, shopId}) {
+function SelectPaymentMethod({ appointmentData, sessionToken, onSuccess, onNext, onBack, shopId}) {
     const [paymentMethod, setPaymentMethod] = useState("");
     const [paymentCompleted, setPaymentCompleted] = useState(false);
     const [connectedAccountId, setConnectedAccountId] = useState(null);
@@ -38,6 +38,7 @@ function SelectPaymentMethod({ appointmentData, sessionToken, onNext, onBack, sh
                 throw new Error(errorMessage || "Booking failed");
             }
 
+            onSuccess();
             onNext.current.nextCallback();
 
         } catch (error) {
@@ -88,7 +89,7 @@ function SelectPaymentMethod({ appointmentData, sessionToken, onNext, onBack, sh
     }
 
     return (
-        <div>
+        <div className="max-h-[70vh] overflow-y-auto">
             <h2>Select a Payment Method</h2>
             <FormControl fullWidth>
                 <InputLabel>Payment Method</InputLabel>

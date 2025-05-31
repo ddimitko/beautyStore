@@ -90,7 +90,6 @@ export default function ShopPage() {
                 </span>
                 </div>
             </div>
-            {/* 🛑 Place Modal at the End of Return */}
             <AppointmentCreationModal
                 isOpen={isModalOpen}
                 onClose={() => setModalOpen(false)}

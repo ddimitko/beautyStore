@@ -23,8 +23,6 @@ export default function Checkout({ connectedAccountId, clientSecret, sessionToke
     const handleCardSuccess = useCallback(async () => {
         setIsSubmitting(true);
 
-        const sessionToken = sessionStorage.getItem("sessionToken");
-
         if (!sessionToken) {
             setIsSubmitting(false);
             return;
@@ -45,8 +43,6 @@ export default function Checkout({ connectedAccountId, clientSecret, sessionToke
                 const errorMessage = await response.text();
                 throw new Error(errorMessage || "Booking failed");
             }
-
-            sessionStorage.removeItem("sessionToken");
 
             onNext.current.nextCallback();
 

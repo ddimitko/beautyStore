@@ -77,10 +77,12 @@ public class CalendarService {
         }
     }
 
-    @Cacheable(value = "annualCalendars", key = "#userId + '-' + #year")
-    public AnnualCalendar findAnnualByEmployeeForYear(long userId, int year) {
-        return annualCalendarRepository.findByEmployeeAndYear(userId, year).orElseThrow(()-> new RuntimeException("Calendar not generated or employee with id: " + userId + " not found"));
+    @Cacheable(value = "annualCalendars", key = "#employeeId + '-' + #year")
+    public AnnualCalendar findAnnualByEmployeeForYear(long employeeId, int year) {
+        return annualCalendarRepository.findByEmployeeAndYear(employeeId, year)
+                .orElseThrow(() -> new RuntimeException("Calendar not generated or employee with id: " + employeeId + " not found"));
     }
+
 
     public DailySchedule findDailyScheduleByEmployeeAndGivenDate(long userId, LocalDate date) {
         AnnualCalendar annual = findAnnualByEmployeeForYear(userId, date.getYear());

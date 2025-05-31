@@ -2,8 +2,15 @@ import { Stepper } from 'primereact/stepper'
 import { StepperPanel } from "primereact/stepperpanel";
 import React, {useContext, useState, useRef, useEffect, useMemo} from "react";
 import {Dialog} from "@headlessui/react";
-import { FormControl, InputLabel, Select, MenuItem, TextField } from "@mui/material";
-import { DatePicker, LocalizationProvider } from "@mui/x-date-pickers";
+import {
+    FormControl,
+    TextField,
+    Card,
+    CardActionArea,
+    CardContent,
+    Typography
+} from "@mui/material";
+import {DateCalendar, DatePicker, LocalizationProvider} from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { AuthContext } from "../AuthContext";
 import AppointmentCreation3 from "./AppointmentCreation3";
@@ -14,6 +21,7 @@ import {X} from "lucide-react";
 import useWebSocket from "../hooks/useWebSocket";
 import dayjs from "dayjs";
 import { Button } from "flowbite-react";
+import {Avatar} from "primereact/avatar";
 
 function AppointmentCreationModal({ isOpen, onClose, shop }) {
     const { isAuthenticated, user } = useContext(AuthContext);
@@ -66,17 +74,13 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
     }, [employee]);
 
     // Handle Employee Selection
-    const handleChangeEmployee = (event) => {
-        const selectedEmployeeId = event.target.value;
-        const selectedEmployee = shop.employeeList.find(emp => emp.userId === parseInt(selectedEmployeeId, 10));
-        setEmployee(selectedEmployee);
+    const handleChangeEmployee = (employee) => {
+        setEmployee(employee)
     };
 
     // Handle Service Selection
-    const handleChangeService = (event) => {
-        const selectedServiceId = event.target.value;
-        const selectedService = serviceList.find(service => service.id === parseInt(selectedServiceId, 10));
-        setService(selectedService);
+    const handleChangeService = (service) => {
+        setService(service);
     };
 
     // Fetch available dates for the selected month/employee
@@ -112,16 +116,16 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
         }
     };
 
-    // Fetch available dates whenever the picker opens or the month changes
+    // Fetch available dates whenever  the month changes
     useEffect(() => {
-        (async () => {
-            if (datePickerOpen) {
+        if(employee && service) {
+            (async () => {
                 const year = selectedMonth.getFullYear();
                 const month = selectedMonth.getMonth();
                 await fetchAvailableDates(year, month);
-            }
-        })();
-    }, [selectedMonth, datePickerOpen]);
+            })();
+        }
+    }, [selectedMonth, employee, service]);
 
     // Determines whether a date should be enabled (available) in the date picker
     const isDateAvailable = (date) => {
@@ -216,14 +220,20 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
         setTimeSlot(null);
         setTimeSlots([]);
         setAccountDetails({ name: '', email: '' });
-        setDatePickerOpen(false);
         setAvailableDates([]);
         setSelectedMonth(new Date());
         // Optionally, if your stepper or other fields have state, reset them as needed
         // Finally, call the parent's onClose to close the modal
-        cancelReservation();
+        if(sessionToken) {
+            cancelReservation();
+            resetSessionToken();
+        }
         onClose();
     };
+
+    const resetSessionToken = () => {
+        setSessionToken(null);
+    }
 
     // Function to reserve appointment
     const reserveAppointment = async (appointmentData) => {
@@ -340,43 +350,91 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                     <Stepper linear ref={stepperRef} style={{ flexBasis: '50rem' }}>
                         {/* Step 1: Select Employee, Service, Date & Time */}
                         <StepperPanel header="Select Details">
+                            <div className="max-h-[70vh] overflow-y-auto">
                             <div className="flex flex-column h-12rem">
                                 <div className="surface-ground flex-auto flex-col justify-content-center align-items-center font-medium">
                                     <FormControl fullWidth>
-                                        <InputLabel>Employee</InputLabel>
-                                        <Select
-                                            value={employee?.userId || ""}
-                                            onChange={handleChangeEmployee}
-                                        >
-                                            {shop.employeeList.filter(emp => emp.userId !== user?.id) // Exclude logged-in user
-                                                .map(emp => (
-                                                    <MenuItem key={emp.userId} value={emp.userId}>
-                                                        {emp.fullName}
-                                                    </MenuItem>
-                                                ))}
-                                        </Select>
-                                    </FormControl>
-                                    <FormControl fullWidth disabled={!employee}>
-                                        <InputLabel>Service</InputLabel>
-                                        <Select
-                                            value={service?.id || ""}
-                                            onChange={handleChangeService}
-                                        >
-                                            {serviceList.map((svc) => (
-                                                <MenuItem key={svc.id} value={svc.id}>
-                                                    {svc.name}
-                                                </MenuItem>
+                                        <Typography variant="body1" fontWeight="bold">
+                                            Employee
+                                        </Typography>
+                                        {shop.employeeList
+                                            .filter(emp => emp.userId !== user?.id) // Exclude logged-in user
+                                            .map(emp => (
+                                                <Card
+                                                    key={emp.userId}
+                                                    onClick={() => handleChangeEmployee(emp)}
+                                                    sx={{
+                                                        border: employee?.userId === emp.userId ? "2px solid #1976D2" : "1px solid #ccc",
+                                                        boxShadow: employee?.userId === emp.userId ? 4 : 1,
+                                                        transition: "0.2s",
+                                                        cursor: "pointer",
+                                                    }}
+                                                >
+                                                    <CardActionArea>
+                                                        <CardContent className="flex items-center space-x-4">
+                                                            <Avatar
+                                                                src={emp.profilePicture || "/images/placeholder-avatar.png"}
+                                                                alt={emp.fullName}
+                                                                sx={{ width: 48, height: 48 }}
+                                                            />
+                                                            <Typography variant="body1" fontWeight="bold">
+                                                                {emp.fullName}
+                                                            </Typography>
+                                                        </CardContent>
+                                                    </CardActionArea>
+                                                </Card>
                                             ))}
-                                        </Select>
                                     </FormControl>
+                                    { employee && (
+                                    <FormControl fullWidth disabled={!employee}>
+                                        <Typography variant="body1" fontWeight="bold" className="pt-2">
+                                            Service
+                                        </Typography>
+                                        {serviceList
+                                            .map(svc => (
+                                                <Card
+                                                    key={svc.id}
+                                                    onClick={() => handleChangeService(svc)}
+                                                    sx={{
+                                                        border: service?.id === svc.id ? "2px solid #1976D2" : "1px solid #ccc",
+                                                        boxShadow: service?.id === svc.id ? 4 : 1,
+                                                        transition: "0.2s",
+                                                        cursor: "pointer",
+                                                    }}
+                                                >
+                                                    <CardActionArea>
+                                                        <CardContent className="flex items-center space-x-4">
+                                                            <Avatar
+                                                                src={svc.image || "/images/placeholder-avatar.png"}
+                                                                alt={svc.name}
+                                                                sx={{ width: 48, height: 48 }}
+                                                            />
+                                                            <Typography variant="body1" fontWeight="bold">
+                                                                {svc.name}
+                                                            </Typography>
+                                                            <Typography variant="body2" fontWeight="lighter">
+                                                                {svc.description}
+                                                            </Typography>
+                                                        </CardContent>
+                                                    </CardActionArea>
+                                                </Card>
+                                            ))}
+                                    </FormControl>
+                                    )}
+                                    { employee && service && (
                                     <LocalizationProvider dateAdapter={AdapterDayjs}>
-                                        <DatePicker value={selectedDate} onChange={handleDateChangeInternal}
+                                        <Typography variant="body1" fontWeight="bold" className="pt-2">
+                                            Date
+                                        </Typography>
+                                        <DateCalendar value={selectedDate} onChange={handleDateChangeInternal}
                                                     onMonthChange={handleMonthChange}
+                                                      disablePast
+                                                      shouldDisableYear={(year) => year < 2025}
+                                                      views={['month', 'day']}
                                             // Disable dates not available (or in the past)
-                                                    shouldDisableDate={(date) => !isDateAvailable(date)}
-                                                    onOpen={() => setDatePickerOpen(true)}
-                                                    onClose={() => setDatePickerOpen(false)}/>
+                                                    shouldDisableDate={(date) => !isDateAvailable(date)}/>
                                     </LocalizationProvider>
+                                    )}
                                     {timeSlots.length > 0 && (
                                         <FormControl fullWidth>
                                             <h3 className="mt-2 text-center">Available Time Slots</h3>
@@ -398,21 +456,20 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                     )}
                                 </div>
                             </div>
-                            <div className="flex pt-4 justify-end">
-                                <Button
-                                    label="Next"
-                                    icon="pi pi-arrow-right"
-                                    iconPos="right"
-                                    disabled={!employee || !service || !selectedDate || !timeSlot}
-                                    onClick={() => stepperRef.current.nextCallback()}
-                                />
                             </div>
+                            <Button
+                                className="mt-2"
+                                label="Next"
+                                color="gray"
+                                disabled={!employee || !service || !selectedDate || !timeSlot}
+                                onClick={() => stepperRef.current.nextCallback()}
+                            />
                         </StepperPanel>
 
                         {/* Step 2: Account Details */}
                         <StepperPanel header="Enter Account Details">
                             <div className="flex flex-column h-12rem">
-                                <div className="border-2 border-dashed surface-border border-round surface-ground flex-auto flex justify-content-center align-items-center font-medium">
+                                <div className="border-round surface-ground flex-auto flex justify-content-center align-items-center font-medium">
                                     <TextField
                                         fullWidth
                                         label="Full Name"
@@ -459,6 +516,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                     label="Back"
                                     severity="secondary"
                                     icon="pi pi-arrow-left"
+                                    color="gray"
                                     onClick={() => {// Clear any stored appointment reservation details when going back
                                         cancelReservation();
                                         // Then go back one step in your stepper
@@ -469,6 +527,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                     label="Next"
                                     icon="pi pi-arrow-right"
                                     iconPos="right"
+                                    color="gray"
                                     disabled={!accountDetails.name || !accountDetails.email}
                                     onClick={handleNext}
                                 />
@@ -477,9 +536,10 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
 
                         <StepperPanel header="Payment Method">
                             <div className="flex flex-column h-12rem">
-                                <div className="border-2 border-dashed surface-border border-round surface-ground flex-auto flex justify-content-center align-items-center font-medium">
+                                <div className="border-round surface-ground flex-auto flex justify-content-center align-items-center font-medium">
                                     <SelectPaymentMethod shopId={shop.id}
                                                          sessionToken={sessionToken}
+                                                         onSuccess={resetSessionToken}
                                                          appointmentData={appointmentData}
                                                          onNext={stepperRef}
                                                          onBack={() => stepperRef.current.prevCallback()}
@@ -495,7 +555,7 @@ function AppointmentCreationModal({ isOpen, onClose, shop }) {
                                 service={service}
                                 timeSlot={timeSlot}
                                 accountDetails={accountDetails}
-                                onClose={onClose}
+                                onClose={handleModalClose}
                             />
                         </StepperPanel>
                     </Stepper>

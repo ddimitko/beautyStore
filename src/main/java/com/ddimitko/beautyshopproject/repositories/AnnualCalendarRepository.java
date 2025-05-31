@@ -11,6 +11,7 @@ import java.util.Optional;
 @Repository
 public interface AnnualCalendarRepository extends JpaRepository<AnnualCalendar, Long> {
 
-    @Query("SELECT ac FROM AnnualCalendar ac WHERE ac.employee.user.id = :userId AND ac.year = :year")
-    Optional<AnnualCalendar> findByEmployeeAndYear(@Param("userId") long userId, int year);
+    @Query("SELECT ac FROM AnnualCalendar ac WHERE ac.employee.id = :employeeId AND ac.year = :year")
+    Optional<AnnualCalendar> findByEmployeeAndYear(@Param("employeeId") long employeeId, int year);
+
 }
